@@ -1,2 +1,0 @@
-# paivyapp
-Work followup app

@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Päivy",
+    "slug": "paivyapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "paivyapp",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#192A3A"
+    },
+    "ios": { "supportsTablet": false, "bundleIdentifier": "fi.paivyapp" },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#192A3A"
+      },
+      "package": "fi.paivyapp"
+    },
+    "web": { "bundler": "metro", "output": "static" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": true }
+  }
+}
