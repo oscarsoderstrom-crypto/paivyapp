@@ -6,21 +6,25 @@
     "orientation": "portrait",
     "scheme": "paivyapp",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#192A3A"
     },
-    "ios": { "supportsTablet": false, "bundleIdentifier": "fi.paivyapp" },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fi.paivyapp"
+    },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#192A3A"
       },
       "package": "fi.paivyapp"
     },
-    "web": { "bundler": "metro", "output": "static" },
+    "web": { "bundler": "metro", "output": "static", "favicon": "./assets/favicon.png" },
     "plugins": ["expo-router", "expo-secure-store"],
     "experiments": { "typedRoutes": true }
   }
