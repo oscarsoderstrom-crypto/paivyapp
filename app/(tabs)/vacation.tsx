@@ -15,6 +15,7 @@ import { FI_HOLIDAYS }       from '../../constants/holidays';
 import GanttTimeline         from '../../components/GanttTimeline';
 import type { VacationRequest } from '../../lib/types';
 
+
 const MONTHS = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 
@@ -343,9 +344,9 @@ const styles = StyleSheet.create({
   calCard:       { borderRadius: 14, padding: 14, borderWidth: 1, marginBottom: 14 },
   dayHeaders:    { flexDirection: 'row', marginBottom: 4 },
   dayHeader:     { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700' },
-  grid:          { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  cell:          { width: '13.5%', aspectRatio: 0.85, borderRadius: 8,
-                   borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: '14.28%', aspectRatio: 0.85, borderRadius: 8,
+        borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cellNum:       { fontSize: 12 },
   dot:           { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
   holLabel:      { fontSize: 5.5, color: '#B45309', marginTop: 1 },
