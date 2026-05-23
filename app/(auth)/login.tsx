@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState }  from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
   Alert, ActivityIndicator,
 } from 'react-native';
+import { router }   from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
 export default function LoginScreen() {
@@ -68,8 +69,16 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.hint}>
-          No account yet? Ask your manager or HR admin to invite you.
+          Have an invite code from your HR admin?
         </Text>
+        <TouchableOpacity
+          onPress={() => router.push('/(auth)/register' as any)}
+          style={{ marginTop: 10 }}
+        >
+          <Text style={[styles.hint, { color: '#E05C2A', fontWeight: '700' }]}>
+            Register with invite code →
+          </Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
