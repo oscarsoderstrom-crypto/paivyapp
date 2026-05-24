@@ -15,7 +15,6 @@ import { FI_HOLIDAYS }       from '../../constants/holidays';
 import GanttTimeline         from '../../components/GanttTimeline';
 import type { VacationRequest } from '../../lib/types';
 
-
 const MONTHS = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 
@@ -36,10 +35,11 @@ export default function VacationScreen() {
   useEffect(() => { if (profile) { fetchVacations(); fetchAccruals(); } }, [profile]);
 
   const fetchVacations = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('vacation_requests')
-      .select('*, profile:profiles(full_name, team_id, team:teams(name,color))')
+      .select('*, profile:profiles!vacation_requests_user_id_fkey(full_name, team_id, team:teams(name,color))')
       .order('start_date');
+    if (error) console.log('VACATION FETCH ERROR:', JSON.stringify(error, null, 2));
     if (data) setVacations(data as VacationRequest[]);
   };
 
@@ -60,10 +60,11 @@ export default function VacationScreen() {
       Alert.alert('Not enough days', `You have ${bal.remaining} days left but this needs ${wd}.`);
       return;
     }
-    await supabase.from('vacation_requests').insert({
+    const { error } = await supabase.from('vacation_requests').insert({
       user_id: profile!.id, start_date: startDate,
       end_date: endDate, type: 'paid', status: 'pending',
     });
+    if (error) { Alert.alert('Error', error.message); return; }
     setModal(false); setStartDate(''); setEndDate('');
     fetchVacations();
   };
@@ -112,7 +113,6 @@ export default function VacationScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll}>
 
-        {/* Balance card */}
         {bal && (
           <View style={styles.balCard}>
             <Text style={styles.balLabel}>
@@ -129,7 +129,6 @@ export default function VacationScreen() {
           </View>
         )}
 
-        {/* View tabs */}
         <View style={[styles.tabRow, { backgroundColor: C.card, borderColor: C.border }]}>
           {(['personal','team','office'] as const).map(t => (
             <TouchableOpacity key={t}
@@ -142,7 +141,6 @@ export default function VacationScreen() {
           ))}
         </View>
 
-        {/* Month nav */}
         <View style={styles.monthNav}>
           <TouchableOpacity onPress={prevMonth}
             style={[styles.navBtn, { borderColor: C.border }]}>
@@ -157,7 +155,6 @@ export default function VacationScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Personal calendar */}
         {view === 'personal' && (
           <View style={[styles.calCard, { backgroundColor: C.card, borderColor: C.border }]}>
             <View style={styles.dayHeaders}>
@@ -199,7 +196,6 @@ export default function VacationScreen() {
           </View>
         )}
 
-        {/* Gantt timeline */}
         {view !== 'personal' && profile && (
           <GanttTimeline
             currentUserId={profile.id}
@@ -211,12 +207,10 @@ export default function VacationScreen() {
           />
         )}
 
-        {/* Request button */}
         <TouchableOpacity style={styles.reqBtn} onPress={() => setModal(true)}>
           <Text style={styles.reqBtnText}>+ Request Vacation</Text>
         </TouchableOpacity>
 
-        {/* My requests */}
         <Text style={[styles.sectionTitle, { color: C.text }]}>My Requests</Text>
         {myVacs.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -243,7 +237,6 @@ export default function VacationScreen() {
           </View>
         ))}
 
-        {/* HR approval queue */}
         {profile?.role === 'hr-admin' && pending.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { color: C.text, marginTop: 8 }]}>
@@ -276,7 +269,6 @@ export default function VacationScreen() {
         )}
       </ScrollView>
 
-      {/* Request modal */}
       <Modal visible={modal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: C.card }]}>
@@ -285,13 +277,13 @@ export default function VacationScreen() {
             <TextInput
               style={[styles.modalInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
               value={startDate} onChangeText={setStartDate}
-              placeholder="2025-06-16" placeholderTextColor={C.muted}
+              placeholder="2026-06-16" placeholderTextColor={C.muted}
             />
             <Text style={[styles.modalLabel, { color: C.muted }]}>END DATE (YYYY-MM-DD)</Text>
             <TextInput
               style={[styles.modalInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
               value={endDate} onChangeText={setEndDate}
-              placeholder="2025-06-27" placeholderTextColor={C.muted}
+              placeholder="2026-06-27" placeholderTextColor={C.muted}
             />
             {startDate && endDate && startDate <= endDate && (
               <Text style={[styles.modalInfo, { color: C.muted }]}>
@@ -344,9 +336,9 @@ const styles = StyleSheet.create({
   calCard:       { borderRadius: 14, padding: 14, borderWidth: 1, marginBottom: 14 },
   dayHeaders:    { flexDirection: 'row', marginBottom: 4 },
   dayHeader:     { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: '14.28%', aspectRatio: 0.85, borderRadius: 8,
-        borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  grid:          { flexDirection: 'row', flexWrap: 'wrap' },
+  cell:          { width: '14.28%', aspectRatio: 0.85, borderRadius: 8,
+                   borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cellNum:       { fontSize: 12 },
   dot:           { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
   holLabel:      { fontSize: 5.5, color: '#B45309', marginTop: 1 },
