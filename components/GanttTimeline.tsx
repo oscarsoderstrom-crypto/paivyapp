@@ -4,6 +4,7 @@ import { supabase }            from '../lib/supabase';
 import {
   isWeekend, isHoliday,
   countWorkdays, getVacationBalance,
+  formatDisplayShort,
 } from '../lib/helpers';
 import { FI_HOLIDAYS }         from '../constants/holidays';
 import type { VacationRequest, Profile, Team } from '../lib/types';
@@ -190,7 +191,7 @@ export default function GanttTimeline({
                       }}>
                         {blockW > 50 && (
                           <Text style={s.blockDateText}>
-                            {v.start_date.slice(5)} – {v.end_date.slice(5)}
+                            {formatDisplayShort(v.start_date)} – {formatDisplayShort(v.end_date)}
                           </Text>
                         )}
                         {blockW > 24 && (

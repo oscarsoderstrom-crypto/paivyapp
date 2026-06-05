@@ -10,6 +10,30 @@ export const formatDate = (d: Date): string => {
 
 export const today = (): string => formatDate(new Date());
 
+// "2026-03-22" → "22.03.2026" (Finnish display format)
+export const formatDisplay = (d: string): string => {
+  if (!d || d.length !== 10) return d;
+  const [y, m, day] = d.split('-');
+  return `${day}.${m}.${y}`;
+};
+
+// "2026-03-22" → "22.03" (short form for tight spaces like Gantt blocks)
+export const formatDisplayShort = (d: string): string => {
+  if (!d || d.length !== 10) return d;
+  const [, m, day] = d.split('-');
+  return `${day}.${m}`;
+};
+
+// "22.03.2026" → "2026-03-22"; returns null if invalid
+export const parseDisplay = (d: string): string | null => {
+  const m = d.trim().match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  if (!m) return null;
+  const day   = m[1].padStart(2, '0');
+  const month = m[2].padStart(2, '0');
+  const year  = m[3];
+  return `${year}-${month}-${day}`;
+};
+
 export const isWeekend = (dateStr: string): boolean => {
   const d = new Date(dateStr + 'T12:00:00').getDay();
   return d === 0 || d === 6;
@@ -47,14 +71,52 @@ export const getVacationBalance = (
   return { total, used, remaining: total - used };
 };
 
-export const getCalendarCells = (year: number, month: number): (string | null)[] => {
-  const cells: (string | null)[] = [];
+// New: calendar cells include trailing days from previous/next months
+export interface CalendarCell {
+  date:         string;
+  currentMonth: boolean;
+}
+
+export const getCalendarCells = (year: number, month: number): CalendarCell[] => {
+  const cells: CalendarCell[] = [];
   const firstDay = (new Date(year, month - 1, 1).getDay() + 6) % 7;
-  for (let i = 0; i < firstDay; i++) cells.push(null);
+
+  // Trailing days from previous month
+  if (firstDay > 0) {
+    const prevLastDay = new Date(year, month - 1, 0).getDate();
+    let py = year, pm = month - 1;
+    if (pm === 0) { pm = 12; py--; }
+    for (let i = firstDay - 1; i >= 0; i--) {
+      const day = prevLastDay - i;
+      cells.push({
+        date: `${py}-${String(pm).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
+        currentMonth: false,
+      });
+    }
+  }
+
+  // Current month
   const daysInMonth = new Date(year, month, 0).getDate();
   for (let i = 1; i <= daysInMonth; i++) {
-    cells.push(`${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`);
+    cells.push({
+      date: `${year}-${String(month).padStart(2,'0')}-${String(i).padStart(2,'0')}`,
+      currentMonth: true,
+    });
   }
+
+  // Leading days from next month to fill the last row
+  const remaining = (7 - (cells.length % 7)) % 7;
+  if (remaining > 0) {
+    let ny = year, nm = month + 1;
+    if (nm === 13) { nm = 1; ny++; }
+    for (let i = 1; i <= remaining; i++) {
+      cells.push({
+        date: `${ny}-${String(nm).padStart(2,'0')}-${String(i).padStart(2,'0')}`,
+        currentMonth: false,
+      });
+    }
+  }
+
   return cells;
 };
 

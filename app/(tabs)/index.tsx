@@ -10,8 +10,8 @@ import { DAY_TYPES }       from '../../constants/dayTypes';
 import { FI_HOLIDAYS }     from '../../constants/holidays';
 import {
   today, getCalendarCells,
-  isWeekend, isHoliday, isNonWorkday,
-  getDateRange,
+  isWeekend, isHoliday,
+  getDateRange, formatDisplay,
 } from '../../lib/helpers';
 import type { WorkLog, DayTypeId } from '../../lib/types';
 
@@ -37,6 +37,7 @@ export default function WorkLogScreen() {
   useEffect(() => { if (profile) fetchLogs(); }, [profile, year, month]);
 
   const fetchLogs = async () => {
+    // Fetch a wider range so trailing days from prev/next months show their logs too
     const start = `${year}-${String(month).padStart(2,'0')}-01`;
     const end   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
     const { data } = await supabase
@@ -47,7 +48,6 @@ export default function WorkLogScreen() {
   };
 
   const handleDayPress = (day: string) => {
-    if (isNonWorkday(day)) return;
     if (selectMode) {
       if (!rangeStart) {
         setRangeStart(day);
@@ -55,7 +55,7 @@ export default function WorkLogScreen() {
       } else {
         const start = day < rangeStart ? day : rangeStart;
         const end   = day < rangeStart ? rangeStart : day;
-        const days  = getDateRange(start, end).filter(d => !isNonWorkday(d));
+        const days  = getDateRange(start, end);
         setPendingDays(days);
         setRangeEnd(day);
         setPicker(true);
@@ -113,7 +113,9 @@ export default function WorkLogScreen() {
 
         {/* Quick today buttons */}
         <View style={[styles.card, { backgroundColor: C.card, borderColor: C.border }]}>
-          <Text style={[styles.sectionLabel, { color: C.muted }]}>TODAY · {todayStr}</Text>
+          <Text style={[styles.sectionLabel, { color: C.muted }]}>
+            TODAY · {formatDisplay(todayStr)}
+          </Text>
           <View style={styles.row}>
             {(['office','home'] as DayTypeId[]).map(t => {
               const dt     = DAY_TYPES.find(d => d.id === t)!;
@@ -174,33 +176,33 @@ export default function WorkLogScreen() {
 
         {/* Calendar grid */}
         <View style={styles.grid}>
-          {cells.map((d, i) => {
-            if (!d) return <View key={'e'+i} style={styles.cell} />;
+          {cells.map((cell, i) => {
+            const d    = cell.date;
             const we   = isWeekend(d);
             const hol  = isHoliday(d);
             const type = logMap[d];
             const dt   = type ? DAY_TYPES.find(t => t.id === type) : null;
-            const isT  = d === todayStr;
+            const isT  = d === todayStr && cell.currentMonth;
             const sel  = inRange(d);
             return (
-              <TouchableOpacity key={d}
+              <TouchableOpacity key={d+'_'+i}
                 style={[styles.cell, {
                   backgroundColor: sel ? C.accent + '44'
                     : hol ? C.hol : we ? C.sub
                     : dt ? dt.color + '18' : C.card,
                   borderColor: sel ? C.accent : isT ? '#1565C0' : C.border,
                   borderWidth: sel || isT ? 2 : 1,
+                  opacity: cell.currentMonth ? 1 : 0.4,
                 }]}
-                onPress={() => handleDayPress(d)}
-                disabled={we || hol}>
+                onPress={() => handleDayPress(d)}>
                 <Text style={[styles.cellNum, {
                   color: hol ? '#B45309' : we ? C.muted : C.text,
                   fontWeight: isT ? '800' : '500',
                 }]}>
                   {new Date(d+'T12:00:00').getDate()}
                 </Text>
-                {dt && !hol && <Text style={styles.cellEmoji}>{dt.emoji}</Text>}
-                {hol && (
+                {dt && <Text style={styles.cellEmoji}>{dt.emoji}</Text>}
+                {hol && !dt && cell.currentMonth && (
                   <Text style={styles.holLabel} numberOfLines={1}>
                     {FI_HOLIDAYS[d].split(' ')[0].substring(0,8)}
                   </Text>
@@ -237,8 +239,8 @@ export default function WorkLogScreen() {
           <View style={[styles.modalBox, { backgroundColor: C.card }]}>
             <Text style={[styles.modalTitle, { color: C.text }]}>
               {pendingDays.length === 1
-                ? `Mark ${pendingDays[0]}`
-                : `Mark ${pendingDays.length} working days`}
+                ? `Mark ${formatDisplay(pendingDays[0])}`
+                : `Mark ${pendingDays.length} days`}
             </Text>
             <Text style={[styles.modalSub, { color: C.muted }]}>
               Choose what to log

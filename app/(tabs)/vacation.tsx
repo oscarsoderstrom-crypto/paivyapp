@@ -10,6 +10,7 @@ import {
   getVacationBalance, countWorkdays,
   statusBg, statusColor, getCalendarCells,
   isWeekend, isHoliday,
+  formatDisplay, parseDisplay,
 } from '../../lib/helpers';
 import { FI_HOLIDAYS }       from '../../constants/holidays';
 import GanttTimeline         from '../../components/GanttTimeline';
@@ -53,16 +54,23 @@ export default function VacationScreen() {
   };
 
   const submitRequest = async () => {
-    if (!startDate || !endDate) { Alert.alert('Please enter both dates'); return; }
-    if (startDate > endDate)    { Alert.alert('Start date must be before end date'); return; }
-    const wd = countWorkdays(startDate, endDate);
+    const start = parseDisplay(startDate);
+    const end   = parseDisplay(endDate);
+    if (!start || !end) {
+      Alert.alert('Invalid date', 'Please use DD.MM.YYYY format (e.g. 16.06.2026)');
+      return;
+    }
+    if (start > end) {
+      Alert.alert('Start date must be before end date'); return;
+    }
+    const wd = countWorkdays(start, end);
     if (bal && wd > bal.remaining) {
       Alert.alert('Not enough days', `You have ${bal.remaining} days left but this needs ${wd}.`);
       return;
     }
     const { error } = await supabase.from('vacation_requests').insert({
-      user_id: profile!.id, start_date: startDate,
-      end_date: endDate, type: 'paid', status: 'pending',
+      user_id: profile!.id, start_date: start,
+      end_date: end, type: 'paid', status: 'pending',
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setModal(false); setStartDate(''); setEndDate('');
@@ -103,6 +111,11 @@ export default function VacationScreen() {
   const ganttVacations = view === 'team'
     ? vacations.filter(v => (v.profile as any)?.team_id === profile?.team_id)
     : vacations;
+
+  const previewStart = parseDisplay(startDate);
+  const previewEnd   = parseDisplay(endDate);
+  const previewWd    = (previewStart && previewEnd && previewStart <= previewEnd)
+    ? countWorkdays(previewStart, previewEnd) : null;
 
   return (
     <View style={[styles.root, { backgroundColor: C.bg }]}>
@@ -163,17 +176,18 @@ export default function VacationScreen() {
               ))}
             </View>
             <View style={styles.grid}>
-              {cells.map((d: string|null, i: number) => {
-                if (!d) return <View key={'e'+i} style={styles.cell} />;
+              {cells.map((cell, i) => {
+                const d   = cell.date;
                 const we  = isWeekend(d);
                 const hol = isHoliday(d);
                 const vs  = myVacMap[d];
                 const dn  = new Date(d+'T12:00:00').getDate();
                 return (
-                  <View key={d} style={[styles.cell, {
+                  <View key={d+'_'+i} style={[styles.cell, {
                     backgroundColor: hol ? C.hol : we ? C.sub
                       : vs ? statusBg(vs) : C.card,
                     borderColor: C.border,
+                    opacity: cell.currentMonth ? 1 : 0.35,
                   }]}>
                     <Text style={[styles.cellNum, {
                       color: hol ? '#B45309' : we ? C.muted : C.text,
@@ -181,7 +195,7 @@ export default function VacationScreen() {
                     {vs && !hol && (
                       <View style={[styles.dot, { backgroundColor: statusColor(vs) }]} />
                     )}
-                    {hol && (
+                    {hol && cell.currentMonth && (
                       <Text style={styles.holLabel} numberOfLines={1}>
                         {FI_HOLIDAYS[d].split(' ')[0].substring(0,6)}
                       </Text>
@@ -222,7 +236,7 @@ export default function VacationScreen() {
             <View style={styles.reqRow}>
               <View>
                 <Text style={[styles.reqDates, { color: C.text }]}>
-                  {v.start_date} → {v.end_date}
+                  {formatDisplay(v.start_date)} → {formatDisplay(v.end_date)}
                 </Text>
                 <Text style={[styles.reqDays, { color: C.muted }]}>
                   {countWorkdays(v.start_date, v.end_date)} working days · Paid
@@ -249,7 +263,7 @@ export default function VacationScreen() {
                   {(v.profile as any)?.full_name}
                 </Text>
                 <Text style={[styles.reqDays, { color: C.muted }]}>
-                  {v.start_date} → {v.end_date} · {countWorkdays(v.start_date, v.end_date)} days
+                  {formatDisplay(v.start_date)} → {formatDisplay(v.end_date)} · {countWorkdays(v.start_date, v.end_date)} days
                 </Text>
                 <View style={styles.approveBtns}>
                   <TouchableOpacity
@@ -273,22 +287,24 @@ export default function VacationScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: C.card }]}>
             <Text style={[styles.modalTitle, { color: C.text }]}>Request Vacation</Text>
-            <Text style={[styles.modalLabel, { color: C.muted }]}>START DATE (YYYY-MM-DD)</Text>
+            <Text style={[styles.modalLabel, { color: C.muted }]}>START DATE (DD.MM.YYYY)</Text>
             <TextInput
               style={[styles.modalInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
               value={startDate} onChangeText={setStartDate}
-              placeholder="2026-06-16" placeholderTextColor={C.muted}
+              placeholder="16.06.2026" placeholderTextColor={C.muted}
+              keyboardType="numbers-and-punctuation"
             />
-            <Text style={[styles.modalLabel, { color: C.muted }]}>END DATE (YYYY-MM-DD)</Text>
+            <Text style={[styles.modalLabel, { color: C.muted }]}>END DATE (DD.MM.YYYY)</Text>
             <TextInput
               style={[styles.modalInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
               value={endDate} onChangeText={setEndDate}
-              placeholder="2026-06-27" placeholderTextColor={C.muted}
+              placeholder="27.06.2026" placeholderTextColor={C.muted}
+              keyboardType="numbers-and-punctuation"
             />
-            {startDate && endDate && startDate <= endDate && (
+            {previewWd !== null && (
               <Text style={[styles.modalInfo, { color: C.muted }]}>
-                {countWorkdays(startDate, endDate)} working days
-                {bal ? ` · ${bal.remaining - countWorkdays(startDate, endDate)} days remaining after` : ''}
+                {previewWd} working days
+                {bal ? ` · ${bal.remaining - previewWd} days remaining after` : ''}
               </Text>
             )}
             <View style={styles.modalBtns}>
