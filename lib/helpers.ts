@@ -119,7 +119,17 @@ export const getCalendarCells = (year: number, month: number): CalendarCell[] =>
 
   return cells;
 };
-
+// Is this date a "workday" for a user, considering their workweek setting?
+// - Mon-Fri user: weekdays only (excludes weekends + holidays)
+// - Mon-Sun user: every day except holidays
+export const isWorkdayForUser = (
+  date: string,
+  workweek: 'mon-fri' | 'mon-sun' = 'mon-fri',
+): boolean => {
+  if (isHoliday(date)) return false;
+  if (workweek === 'mon-sun') return true;
+  return !isWeekend(date);
+};
 export const statusColor = (s: string) =>
   s === 'approved' ? '#2E7D32' : s === 'pending' ? '#BF360C' : '#C62828';
 

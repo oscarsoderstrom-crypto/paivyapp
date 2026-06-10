@@ -6,7 +6,7 @@ import {
 import { supabase }  from '../../lib/supabase';
 import { useAuth }   from '../../hooks/useAuth';
 import { Colors }    from '../../constants/colors';
-import type { Profile, Team } from '../../lib/types';
+import type { Profile, Team, Workweek } from '../../lib/types';
 
 export default function TeamScreen() {
   const scheme      = useColorScheme();
@@ -38,6 +38,11 @@ export default function TeamScreen() {
 
   const updateAccrual = async (userId: string, rate: number) => {
     await supabase.from('profiles').update({ accrual_rate: rate }).eq('id', userId);
+    fetchData();
+  };
+
+  const updateWorkweek = async (userId: string, workweek: Workweek) => {
+    await supabase.from('profiles').update({ workweek }).eq('id', userId);
     fetchData();
   };
 
@@ -106,7 +111,7 @@ export default function TeamScreen() {
                         </Text>
                         <Text style={[styles.memberRole, { color: C.muted }]}>
                           {roleLabel}
-                          {isMgr ? ` · ${m.accrual_rate}d/mo` : ''}
+                          {isMgr ? ` · ${m.accrual_rate}d/mo · ${m.workweek === 'mon-sun' ? 'Mon–Sun' : 'Mon–Fri'}` : ''}
                         </Text>
                       </View>
                     </View>
@@ -129,7 +134,7 @@ export default function TeamScreen() {
               </TouchableOpacity>
             </View>
             <Text style={[styles.modalSub, { color: C.muted }]}>
-              Reassign teams and set accrual rates.
+              Set team, vacation accrual, and workweek pattern per user.
             </Text>
             <ScrollView>
               {members.map(m => (
@@ -141,6 +146,8 @@ export default function TeamScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.memberName, { color: C.text }]}>{m.full_name}</Text>
+
+                    <Text style={[styles.fieldLabel, { color: C.muted }]}>TEAM</Text>
                     <View style={styles.settingsBtns}>
                       {teams.map(t => (
                         <TouchableOpacity key={t.id}
@@ -155,6 +162,8 @@ export default function TeamScreen() {
                         </TouchableOpacity>
                       ))}
                     </View>
+
+                    <Text style={[styles.fieldLabel, { color: C.muted }]}>ACCRUAL (DAYS/MONTH)</Text>
                     <View style={styles.settingsBtns}>
                       {[1.5, 2.0, 2.5].map(r => (
                         <TouchableOpacity key={r}
@@ -165,6 +174,25 @@ export default function TeamScreen() {
                           <Text style={[styles.ratePillText,
                             { color: m.accrual_rate === r ? 'white' : C.accent }]}>
                             {r}d
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={[styles.fieldLabel, { color: C.muted }]}>WORKWEEK</Text>
+                    <View style={styles.settingsBtns}>
+                      {([
+                        { id: 'mon-fri', label: 'Mon–Fri' },
+                        { id: 'mon-sun', label: 'Mon–Sun' },
+                      ] as { id: Workweek; label: string }[]).map(w => (
+                        <TouchableOpacity key={w.id}
+                          style={[styles.ratePill,
+                            { borderColor: C.accent,
+                              backgroundColor: m.workweek === w.id ? C.accent : 'transparent' }]}
+                          onPress={() => updateWorkweek(m.id, w.id)}>
+                          <Text style={[styles.ratePillText,
+                            { color: m.workweek === w.id ? 'white' : C.accent }]}>
+                            {w.label}
                           </Text>
                         </TouchableOpacity>
                       ))}
@@ -208,14 +236,15 @@ const styles = StyleSheet.create({
   memberName:    { fontSize: 14, fontWeight: '600' },
   memberRole:    { fontSize: 11, marginTop: 1 },
   modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalBox:      { borderRadius: 24, padding: 22, paddingBottom: 36, maxHeight: '85%' },
+  modalBox:      { borderRadius: 24, padding: 22, paddingBottom: 36, maxHeight: '90%' },
   modalHeader:   { flexDirection: 'row', justifyContent: 'space-between',
                    alignItems: 'center', marginBottom: 6 },
   modalTitle:    { fontSize: 18, fontWeight: '800' },
   modalSub:      { fontSize: 12, marginBottom: 16 },
   settingsRow:   { borderRadius: 12, padding: 12, borderWidth: 1,
                    marginBottom: 8, flexDirection: 'row', gap: 10 },
-  settingsBtns:  { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
+  fieldLabel:    { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 8, marginBottom: 4 },
+  settingsBtns:  { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   teamPill:      { paddingHorizontal: 8, paddingVertical: 3,
                    borderRadius: 20, borderWidth: 1 },
   teamPillText:  { fontSize: 11, fontWeight: '600' },

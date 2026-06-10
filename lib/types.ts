@@ -1,6 +1,8 @@
 export type Role           = 'employee' | 'manager' | 'hr-admin';
 export type VacationStatus = 'pending' | 'approved' | 'rejected';
-export type DayTypeId      = 'office' | 'home' | 'vac-paid' | 'vac-unpaid' | 'sick' | 'trip-dom' | 'trip-int';
+export type DayTypeId      = 'office' | 'home' | 'vac-paid' | 'vac-unpaid'
+                           | 'sick' | 'trip-dom' | 'trip-int' | 'off';
+export type Workweek       = 'mon-fri' | 'mon-sun';
 
 export interface Team {
   id:    string;
@@ -15,6 +17,7 @@ export interface Profile {
   role:         Role;
   team_id:      string | null;
   accrual_rate: number;
+  workweek:     Workweek;
   team?:        Team;
 }
 

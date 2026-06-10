@@ -12,6 +12,7 @@ import {
   today, getCalendarCells,
   isWeekend, isHoliday,
   getDateRange, formatDisplay,
+  isWorkdayForUser,
 } from '../../lib/helpers';
 import type { WorkLog, DayTypeId } from '../../lib/types';
 
@@ -55,7 +56,8 @@ export default function WorkLogScreen() {
       } else {
         const start = day < rangeStart ? day : rangeStart;
         const end   = day < rangeStart ? rangeStart : day;
-        const days  = getDateRange(start, end);
+        const workweek = profile?.workweek ?? 'mon-fri';
+        const days = getDateRange(start, end).filter(d => isWorkdayForUser(d, workweek));
         setPendingDays(days);
         setRangeEnd(day);
         setPicker(true);
