@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, useColorScheme, Modal,
+  StyleSheet, useColorScheme, Modal, Alert,
 } from 'react-native';
 import { supabase }  from '../../lib/supabase';
 import { useAuth }   from '../../hooks/useAuth';
@@ -31,20 +31,19 @@ export default function TeamScreen() {
     if (m) setMembers(m as Profile[]);
   };
 
-  const updateTeam = async (userId: string, teamId: string) => {
-    await supabase.from('profiles').update({ team_id: teamId }).eq('id', userId);
+  const adminUpdate = async (userId: string, fields: {
+    p_team_id?: string; p_accrual?: number; p_workweek?: Workweek;
+  }) => {
+    const { error } = await supabase.rpc('admin_update_profile', {
+      p_user_id: userId, ...fields,
+    });
+    if (error) Alert.alert('Error', error.message);
     fetchData();
   };
 
-  const updateAccrual = async (userId: string, rate: number) => {
-    await supabase.from('profiles').update({ accrual_rate: rate }).eq('id', userId);
-    fetchData();
-  };
-
-  const updateWorkweek = async (userId: string, workweek: Workweek) => {
-    await supabase.from('profiles').update({ workweek }).eq('id', userId);
-    fetchData();
-  };
+  const updateTeam     = (userId: string, teamId: string)     => adminUpdate(userId, { p_team_id: teamId });
+  const updateAccrual  = (userId: string, rate: number)       => adminUpdate(userId, { p_accrual: rate });
+  const updateWorkweek = (userId: string, workweek: Workweek) => adminUpdate(userId, { p_workweek: workweek });
 
   const visibleTeams = isMgr && showAll
     ? teams

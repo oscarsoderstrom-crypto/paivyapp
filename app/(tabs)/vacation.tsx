@@ -78,8 +78,11 @@ export default function VacationScreen() {
   };
 
   const approveReject = async (id: string, status: 'approved'|'rejected') => {
-    await supabase.from('vacation_requests')
-      .update({ status, reviewed_by: profile!.id }).eq('id', id);
+    const { error } = await supabase.rpc('approve_vacation', {
+      p_request_id: id,
+      p_decision:   status,
+    });
+    if (error) Alert.alert('Error', error.message);
     fetchVacations();
   };
 

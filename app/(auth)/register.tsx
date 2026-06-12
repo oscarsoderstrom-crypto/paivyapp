@@ -18,66 +18,35 @@ export default function RegisterScreen() {
     if (!email || !code || !name || !password) {
       Alert.alert('Please fill in all fields'); return;
     }
+    if (code.trim().length < 8) {
+      Alert.alert('Invalid code', 'The invite code is 8 characters.'); return;
+    }
     if (password.length < 6) {
       Alert.alert('Password must be at least 6 characters'); return;
     }
     setLoading(true);
 
-    // Find invitation matching email + code prefix
-    const { data: invites, error: invErr } = await supabase
-      .from('invitations')
-      .select('*')
-      .eq('email', email.toLowerCase().trim())
-      .is('accepted_at', null);
-
-    if (invErr || !invites || invites.length === 0) {
-      setLoading(false);
-      Alert.alert('Invalid invite', 'No invitation found for this email address.');
-      return;
-    }
-
-    const invite = invites.find((i: any) =>
-      i.token.toLowerCase().startsWith(code.toLowerCase().trim())
-    );
-
-    if (!invite) {
-      setLoading(false);
-      Alert.alert('Invalid code', 'The invite code does not match. Check with your HR admin.');
-      return;
-    }
-
-    if (new Date(invite.expires_at) < new Date()) {
-      setLoading(false);
-      Alert.alert('Expired', 'This invite has expired. Ask HR admin to send a new one.');
-      return;
-    }
-
-    // Create the account
-    const { data: authData, error: signUpErr } = await supabase.auth.signUp({
+    // The invite code is validated server-side by the signup trigger;
+    // without a matching invitation no account is created.
+    const { error: signUpErr } = await supabase.auth.signUp({
       email: email.toLowerCase().trim(),
       password,
-      options: { data: { full_name: name.trim() } },
+      options: {
+        data: {
+          full_name:   name.trim(),
+          invite_code: code.toLowerCase().trim(),
+        },
+      },
     });
 
-    if (signUpErr || !authData.user) {
-      setLoading(false);
-      Alert.alert('Sign up failed', signUpErr?.message || 'Unknown error');
+    setLoading(false);
+
+    if (signUpErr) {
+      Alert.alert('Sign up failed', signUpErr.message.includes('Database error')
+        ? 'No valid invitation found for this email and code. Check with your HR admin.'
+        : signUpErr.message);
       return;
     }
-
-    // Update profile with team and role from invitation
-    await supabase.from('profiles').update({
-      full_name: name.trim(),
-      team_id:   invite.team_id,
-      role:      invite.role,
-    }).eq('id', authData.user.id);
-
-    // Mark invitation as accepted
-    await supabase.from('invitations')
-      .update({ accepted_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    setLoading(false);
     // Auth state change in useAuth will redirect automatically
   };
 
