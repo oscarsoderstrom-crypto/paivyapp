@@ -40,7 +40,7 @@ export default function VacationScreen() {
       .from('vacation_requests')
       .select('*, profile:profiles!vacation_requests_user_id_fkey(full_name, team_id, team:teams(name,color))')
       .order('start_date');
-    if (error) console.log('VACATION FETCH ERROR:', JSON.stringify(error, null, 2));
+    if (error) { Alert.alert('Could not load vacations', error.message); return; }
     if (data) setVacations(data as VacationRequest[]);
   };
 

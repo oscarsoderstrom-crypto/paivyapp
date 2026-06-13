@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, useColorScheme, Modal,
+  StyleSheet, useColorScheme, Modal, Alert,
 } from 'react-native';
 import { supabase }        from '../../lib/supabase';
 import { useAuth }         from '../../hooks/useAuth';
@@ -70,7 +70,9 @@ export default function WorkLogScreen() {
 
   const markDays = async (type: DayTypeId) => {
     const rows = pendingDays.map(date => ({ user_id: profile!.id, date, type }));
-    await supabase.from('work_logs').upsert(rows, { onConflict: 'user_id,date' });
+    const { error } = await supabase.from('work_logs')
+      .upsert(rows, { onConflict: 'user_id,date' });
+    if (error) Alert.alert('Could not save', error.message);
     closePicker();
     fetchLogs();
   };
@@ -84,9 +86,10 @@ export default function WorkLogScreen() {
   };
 
   const markToday = async (type: DayTypeId) => {
-    await supabase.from('work_logs').upsert(
+    const { error } = await supabase.from('work_logs').upsert(
       { user_id: profile!.id, date: todayStr, type },
       { onConflict: 'user_id,date' });
+    if (error) Alert.alert('Could not save', error.message);
     fetchLogs();
   };
 
