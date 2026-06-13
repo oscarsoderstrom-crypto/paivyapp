@@ -1,0 +1,24 @@
+# Cloudflare Tunnel config for the ThinkStation staging box.
+#
+# Setup:
+#   cloudflared tunnel login
+#   cloudflared tunnel create paivy-staging
+#   cloudflared tunnel route dns paivy-staging api.staging.paivy.fi
+#   cp infra/cloudflared/config.example.yml ~/.cloudflared/config.yml
+#   # edit the tunnel id + credentials path + hostname below
+#   sudo cloudflared service install
+#
+# No inbound ports are opened on your router: the tunnel dials OUT to
+# Cloudflare, which terminates TLS and forwards to Kong on localhost:8000.
+# WebSockets (Supabase Realtime) pass through automatically.
+#
+# Lock the hostname behind Cloudflare Access (Zero Trust) so the staging API
+# and Studio are not open to the public internet.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /home/youruser/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: api.staging.paivy.fi
+    service: http://localhost:8000
+  - service: http_status:404
