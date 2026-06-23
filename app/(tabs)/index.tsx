@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, useColorScheme, Modal, Alert,
+  StyleSheet, useColorScheme, Modal, Alert, TextInput,
 } from 'react-native';
 import { supabase }        from '../../lib/supabase';
 import { useAuth }         from '../../hooks/useAuth';
+import { useSettings }     from '../../hooks/useSettings';
 import { Colors }          from '../../constants/colors';
 import { DAY_TYPES }       from '../../constants/dayTypes';
 import { FI_HOLIDAYS }     from '../../constants/holidays';
@@ -13,6 +14,7 @@ import {
   isWeekend, isHoliday,
   getDateRange, formatDisplay,
   isWorkdayForUser,
+  parseHHMM, hoursBetween,
 } from '../../lib/helpers';
 import type { WorkLog, DayTypeId } from '../../lib/types';
 
@@ -22,7 +24,8 @@ const MONTHS = ['January','February','March','April','May','June',
 export default function WorkLogScreen() {
   const scheme      = useColorScheme() ?? 'light';
   const C           = Colors[scheme as 'light' | 'dark'];
-  const { profile } = useAuth();
+  const { profile }      = useAuth();
+  const { timeTracking } = useSettings();
   const [logs,  setLogs]  = useState<WorkLog[]>([]);
   const [year,  setYear]  = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -32,6 +35,13 @@ export default function WorkLogScreen() {
   const [rangeEnd,   setRangeEnd]   = useState<string | null>(null);
   const [picker,     setPicker]     = useState(false);
   const [pendingDays,setPendingDays]= useState<string[]>([]);
+
+  // Time-entry flow (only used when HR has enabled time tracking)
+  const [timeModal, setTimeModal] = useState(false);
+  const [timeType,  setTimeType]  = useState<DayTypeId | null>(null);
+  const [timeDays,  setTimeDays]  = useState<string[]>([]);
+  const [startTime, setStartTime] = useState('');
+  const [endTime,   setEndTime]   = useState('');
 
   const todayStr = today();
 
@@ -68,13 +78,33 @@ export default function WorkLogScreen() {
     }
   };
 
-  const markDays = async (type: DayTypeId) => {
-    const rows = pendingDays.map(date => ({ user_id: profile!.id, date, type }));
+  const needsTime = (type: DayTypeId) =>
+    timeTracking && (type === 'office' || type === 'home');
+
+  const upsertLogs = async (
+    days: string[], type: DayTypeId,
+    start: string | null, end: string | null,
+  ) => {
+    const rows = days.map(date => ({
+      user_id: profile!.id, date, type, start_time: start, end_time: end,
+    }));
     const { error } = await supabase.from('work_logs')
       .upsert(rows, { onConflict: 'user_id,date' });
     if (error) Alert.alert('Could not save', error.message);
-    closePicker();
     fetchLogs();
+  };
+
+  const markDays = async (type: DayTypeId) => {
+    if (needsTime(type)) {
+      setTimeType(type);
+      setTimeDays(pendingDays);
+      setStartTime(''); setEndTime('');
+      setPicker(false);
+      setTimeModal(true);
+      return;
+    }
+    await upsertLogs(pendingDays, type, null, null);
+    closePicker();
   };
 
   const closePicker = () => {
@@ -86,11 +116,30 @@ export default function WorkLogScreen() {
   };
 
   const markToday = async (type: DayTypeId) => {
-    const { error } = await supabase.from('work_logs').upsert(
-      { user_id: profile!.id, date: todayStr, type },
-      { onConflict: 'user_id,date' });
-    if (error) Alert.alert('Could not save', error.message);
-    fetchLogs();
+    if (needsTime(type)) {
+      setTimeType(type);
+      setTimeDays([todayStr]);
+      setStartTime(''); setEndTime('');
+      setTimeModal(true);
+      return;
+    }
+    await upsertLogs([todayStr], type, null, null);
+  };
+
+  const submitTimed = async () => {
+    const s = parseHHMM(startTime);
+    const e = parseHHMM(endTime);
+    if (!s || !e) {
+      Alert.alert('Invalid time', 'Use 24-hour HH:MM, e.g. 08:30 and 16:30.');
+      return;
+    }
+    if (hoursBetween(s, e) === null) {
+      Alert.alert('Invalid range', 'End time must be after start time.');
+      return;
+    }
+    await upsertLogs(timeDays, timeType!, s, e);
+    setTimeModal(false);
+    closePicker();
   };
 
   const inRange = (day: string) => {
@@ -101,8 +150,14 @@ export default function WorkLogScreen() {
     return day >= lo && day <= hi;
   };
 
-  const logMap = Object.fromEntries(logs.map(l => [l.date, l.type]));
-  const cells  = getCalendarCells(year, month);
+  const logMap    = Object.fromEntries(logs.map(l => [l.date, l.type]));
+  const logByDate = Object.fromEntries(logs.map(l => [l.date, l]));
+  const cells     = getCalendarCells(year, month);
+
+  // Monthly working-time totals (logs are already fetched for this month)
+  const totalHours   = logs.reduce((sum, l) => sum + (hoursBetween(l.start_time, l.end_time) ?? 0), 0);
+  const daysTracked  = logs.filter(l => l.start_time && l.end_time).length;
+  const previewHours = hoursBetween(parseHHMM(startTime), parseHHMM(endTime));
 
   const prevMonth = () => { if(month===1){setYear(y=>y-1);setMonth(12);}else setMonth(m=>m-1); };
   const nextMonth = () => { if(month===12){setYear(y=>y+1);setMonth(1);}else setMonth(m=>m+1); };
@@ -207,6 +262,12 @@ export default function WorkLogScreen() {
                   {new Date(d+'T12:00:00').getDate()}
                 </Text>
                 {dt && <Text style={styles.cellEmoji}>{dt.emoji}</Text>}
+                {timeTracking && cell.currentMonth
+                  && logByDate[d]?.start_time && logByDate[d]?.end_time && (
+                  <Text style={[styles.cellHrs, { color: C.muted }]}>
+                    {(hoursBetween(logByDate[d].start_time, logByDate[d].end_time) ?? 0).toFixed(1)}h
+                  </Text>
+                )}
                 {hol && !dt && cell.currentMonth && (
                   <Text style={styles.holLabel} numberOfLines={1}>
                     {FI_HOLIDAYS[d].split(' ')[0].substring(0,8)}
@@ -216,6 +277,19 @@ export default function WorkLogScreen() {
             );
           })}
         </View>
+
+        {/* Working-time summary (only when HR has enabled tracking) */}
+        {timeTracking && (
+          <View style={styles.timeCard}>
+            <Text style={styles.timeLabel}>WORKING TIME · {MONTHS[month-1].toUpperCase()}</Text>
+            <Text style={styles.timeHours}>
+              {totalHours.toFixed(1)}<Text style={styles.timeUnit}> h</Text>
+            </Text>
+            <Text style={styles.timeSub}>
+              {daysTracked} day{daysTracked === 1 ? '' : 's'} with logged hours
+            </Text>
+          </View>
+        )}
 
         {/* Stats */}
         <View style={styles.statsRow}>
@@ -267,6 +341,59 @@ export default function WorkLogScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Working-hours entry (time tracking on) */}
+      <Modal visible={timeModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: C.card }]}>
+            <Text style={[styles.modalTitle, { color: C.text }]}>
+              {timeType ? DAY_TYPES.find(d => d.id === timeType)?.label : ''}
+            </Text>
+            <Text style={[styles.modalSub, { color: C.muted }]}>
+              {timeDays.length === 1
+                ? `${formatDisplay(timeDays[0])} · enter your working hours`
+                : `${timeDays.length} days · enter your working hours`}
+            </Text>
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.timeFieldLabel, { color: C.muted }]}>START</Text>
+                <TextInput
+                  style={[styles.timeInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
+                  value={startTime} onChangeText={setStartTime}
+                  placeholder="08:30" placeholderTextColor={C.muted}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.timeFieldLabel, { color: C.muted }]}>END</Text>
+                <TextInput
+                  style={[styles.timeInput, { borderColor: C.border, color: C.text, backgroundColor: C.bg }]}
+                  value={endTime} onChangeText={setEndTime}
+                  placeholder="16:30" placeholderTextColor={C.muted}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+            </View>
+            {previewHours !== null && (
+              <Text style={[styles.modalSub, { color: C.muted, marginTop: 12 }]}>
+                {previewHours.toFixed(1)} working hours
+              </Text>
+            )}
+            <View style={styles.timeBtns}>
+              <TouchableOpacity
+                style={[styles.timeBtn, { borderColor: C.border, backgroundColor: C.bg }]}
+                onPress={() => { setTimeModal(false); closePicker(); }}>
+                <Text style={{ color: C.muted }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.timeBtn, { backgroundColor: C.accent, borderColor: C.accent }]}
+                onPress={submitTimed}>
+                <Text style={{ color: 'white', fontWeight: '700' }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -297,7 +424,17 @@ const styles = StyleSheet.create({
                   alignItems: 'center', justifyContent: 'center', padding: 2 },
   cellNum:      { fontSize: 13 },
   cellEmoji:    { fontSize: 11, marginTop: 1 },
+  cellHrs:      { fontSize: 7.5, fontWeight: '700', marginTop: 1 },
   holLabel:     { fontSize: 6, color: '#B45309', marginTop: 1 },
+  timeCard:     { backgroundColor: '#192A3A', borderRadius: 16, padding: 18, marginBottom: 14 },
+  timeLabel:    { fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5, marginBottom: 6 },
+  timeHours:    { fontSize: 34, fontWeight: '800', color: 'white', letterSpacing: -1 },
+  timeUnit:     { fontSize: 16, fontWeight: '400', opacity: 0.55 },
+  timeSub:      { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
+  timeFieldLabel:{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
+  timeInput:    { borderWidth: 1.5, borderRadius: 10, padding: 12, fontSize: 16 },
+  timeBtns:     { flexDirection: 'row', gap: 10, marginTop: 18 },
+  timeBtn:      { flex: 1, paddingVertical: 13, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   statsRow:     { flexDirection: 'row', gap: 8 },
   statCard:     { flex: 1, borderRadius: 10, padding: 10, borderWidth: 1, alignItems: 'center' },
   statNum:      { fontSize: 22, fontWeight: '800', lineHeight: 26 },

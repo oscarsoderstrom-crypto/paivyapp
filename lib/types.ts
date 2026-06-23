@@ -22,11 +22,13 @@ export interface Profile {
 }
 
 export interface WorkLog {
-  id:      string;
-  user_id: string;
-  date:    string;
-  type:    DayTypeId;
-  notes?:  string;
+  id:          string;
+  user_id:     string;
+  date:        string;
+  type:        DayTypeId;
+  notes?:      string;
+  start_time?: string | null;
+  end_time?:   string | null;
 }
 
 export interface VacationRequest {
@@ -45,4 +47,8 @@ export interface VacationBalance {
   total:     number;
   used:      number;
   remaining: number;
+}
+
+export interface AppSettings {
+  time_tracking_enabled: boolean;
 }
