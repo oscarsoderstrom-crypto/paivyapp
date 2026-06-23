@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, useColorScheme, Switch, Alert,
-  Modal, TextInput, Share,
+  Modal, TextInput, Share, Platform,
 } from 'react-native';
 import { useAuth }  from '../../hooks/useAuth';
 import { Colors }   from '../../constants/colors';
@@ -97,6 +97,10 @@ export default function ProfileScreen() {
     .split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
 
   const handleSignOut = () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Sign out?')) signOut();
+      return;
+    }
     Alert.alert('Sign out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: signOut },

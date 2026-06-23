@@ -7,6 +7,14 @@ import {
 import { router }   from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
+const showAlert = (title: string, message?: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(message ? `${title}\n\n${message}` : title);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
 export default function RegisterScreen() {
   const [email,    setEmail]    = useState('');
   const [code,     setCode]     = useState('');
@@ -15,24 +23,26 @@ export default function RegisterScreen() {
   const [loading,  setLoading]  = useState(false);
 
   const register = async () => {
+    console.log('[register] clicked', { email, code, name, passwordLen: password.length });
+
     if (!email || !code || !name || !password) {
-      Alert.alert('Please fill in all fields'); return;
+      showAlert('Please fill in all fields'); return;
     }
     if (password.length < 6) {
-      Alert.alert('Password must be at least 6 characters'); return;
+      showAlert('Password must be at least 6 characters'); return;
     }
     setLoading(true);
 
-    // Find invitation matching email + code prefix
     const { data: invites, error: invErr } = await supabase
-      .from('invitations')
-      .select('*')
+      .from('invitations').select('*')
       .eq('email', email.toLowerCase().trim())
       .is('accepted_at', null);
 
+    console.log('[register] invites query', { invErr, count: invites?.length });
+
     if (invErr || !invites || invites.length === 0) {
       setLoading(false);
-      Alert.alert('Invalid invite', 'No invitation found for this email address.');
+      showAlert('Invalid invite', 'No invitation found for this email address.');
       return;
     }
 
@@ -42,43 +52,42 @@ export default function RegisterScreen() {
 
     if (!invite) {
       setLoading(false);
-      Alert.alert('Invalid code', 'The invite code does not match. Check with your HR admin.');
+      showAlert('Invalid code', 'The invite code does not match. Check with your HR admin.');
       return;
     }
 
     if (new Date(invite.expires_at) < new Date()) {
       setLoading(false);
-      Alert.alert('Expired', 'This invite has expired. Ask HR admin to send a new one.');
+      showAlert('Expired', 'This invite has expired. Ask HR admin to send a new one.');
       return;
     }
 
-    // Create the account
     const { data: authData, error: signUpErr } = await supabase.auth.signUp({
       email: email.toLowerCase().trim(),
       password,
       options: { data: { full_name: name.trim() } },
     });
 
+    console.log('[register] signUp result', { signUpErr, userId: authData?.user?.id });
+
     if (signUpErr || !authData.user) {
       setLoading(false);
-      Alert.alert('Sign up failed', signUpErr?.message || 'Unknown error');
+      showAlert('Sign up failed', signUpErr?.message || 'Unknown error');
       return;
     }
 
-    // Update profile with team and role from invitation
     await supabase.from('profiles').update({
       full_name: name.trim(),
       team_id:   invite.team_id,
       role:      invite.role,
     }).eq('id', authData.user.id);
 
-    // Mark invitation as accepted
     await supabase.from('invitations')
       .update({ accepted_at: new Date().toISOString() })
       .eq('id', invite.id);
 
+    console.log('[register] done — auth listener should redirect');
     setLoading(false);
-    // Auth state change in useAuth will redirect automatically
   };
 
   return (
@@ -98,8 +107,7 @@ export default function RegisterScreen() {
             style={styles.input}
             placeholder="e.g. a3f9b82c"
             placeholderTextColor="#4A6075"
-            value={code}
-            onChangeText={setCode}
+            value={code} onChangeText={setCode}
             autoCapitalize="none"
           />
           <Text style={styles.label}>YOUR EMAIL</Text>
@@ -107,26 +115,22 @@ export default function RegisterScreen() {
             style={styles.input}
             placeholder="you@company.fi"
             placeholderTextColor="#4A6075"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
+            value={email} onChangeText={setEmail}
+            autoCapitalize="none" keyboardType="email-address"
           />
           <Text style={styles.label}>FULL NAME</Text>
           <TextInput
             style={styles.input}
             placeholder="Matti Meikäläinen"
             placeholderTextColor="#4A6075"
-            value={name}
-            onChangeText={setName}
+            value={name} onChangeText={setName}
           />
           <Text style={styles.label}>PASSWORD</Text>
           <TextInput
             style={[styles.input, { marginBottom: 0 }]}
             placeholder="Min. 6 characters"
             placeholderTextColor="#4A6075"
-            value={password}
-            onChangeText={setPassword}
+            value={password} onChangeText={setPassword}
             secureTextEntry
           />
         </View>
