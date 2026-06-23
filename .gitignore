@@ -30,8 +30,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# env files — never commit real secrets; .example/.template files are committed
+.env
+.env.*
+!.env.example
+!.env.template
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +42,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# infra — self-hosting secrets & local artifacts (never commit)
+infra/docker/.env.secrets
+infra/**/*.gpg
+infra/cloudflared/config.yml
+infra/cloudflared/*.json
+backups/

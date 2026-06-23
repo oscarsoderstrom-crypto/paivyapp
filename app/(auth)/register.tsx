@@ -7,6 +7,7 @@ import {
 import { router }   from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
+// Alert.alert is a no-op on React Native Web, so fall back to window.alert there.
 const showAlert = (title: string, message?: string) => {
   if (Platform.OS === 'web') {
     window.alert(message ? `${title}\n\n${message}` : title);
@@ -23,71 +24,39 @@ export default function RegisterScreen() {
   const [loading,  setLoading]  = useState(false);
 
   const register = async () => {
-    console.log('[register] clicked', { email, code, name, passwordLen: password.length });
-
     if (!email || !code || !name || !password) {
       showAlert('Please fill in all fields'); return;
+    }
+    if (code.trim().length < 8) {
+      showAlert('Invalid code', 'The invite code is 8 characters.'); return;
     }
     if (password.length < 6) {
       showAlert('Password must be at least 6 characters'); return;
     }
     setLoading(true);
 
-    const { data: invites, error: invErr } = await supabase
-      .from('invitations').select('*')
-      .eq('email', email.toLowerCase().trim())
-      .is('accepted_at', null);
-
-    console.log('[register] invites query', { invErr, count: invites?.length });
-
-    if (invErr || !invites || invites.length === 0) {
-      setLoading(false);
-      showAlert('Invalid invite', 'No invitation found for this email address.');
-      return;
-    }
-
-    const invite = invites.find((i: any) =>
-      i.token.toLowerCase().startsWith(code.toLowerCase().trim())
-    );
-
-    if (!invite) {
-      setLoading(false);
-      showAlert('Invalid code', 'The invite code does not match. Check with your HR admin.');
-      return;
-    }
-
-    if (new Date(invite.expires_at) < new Date()) {
-      setLoading(false);
-      showAlert('Expired', 'This invite has expired. Ask HR admin to send a new one.');
-      return;
-    }
-
-    const { data: authData, error: signUpErr } = await supabase.auth.signUp({
+    // The invite code is validated server-side by the signup trigger;
+    // without a matching invitation no account is created.
+    const { error: signUpErr } = await supabase.auth.signUp({
       email: email.toLowerCase().trim(),
       password,
-      options: { data: { full_name: name.trim() } },
+      options: {
+        data: {
+          full_name:   name.trim(),
+          invite_code: code.toLowerCase().trim(),
+        },
+      },
     });
 
-    console.log('[register] signUp result', { signUpErr, userId: authData?.user?.id });
+    setLoading(false);
 
-    if (signUpErr || !authData.user) {
-      setLoading(false);
-      showAlert('Sign up failed', signUpErr?.message || 'Unknown error');
+    if (signUpErr) {
+      showAlert('Sign up failed', signUpErr.message.includes('Database error')
+        ? 'No valid invitation found for this email and code. Check with your HR admin.'
+        : signUpErr.message);
       return;
     }
-
-    await supabase.from('profiles').update({
-      full_name: name.trim(),
-      team_id:   invite.team_id,
-      role:      invite.role,
-    }).eq('id', authData.user.id);
-
-    await supabase.from('invitations')
-      .update({ accepted_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    console.log('[register] done — auth listener should redirect');
-    setLoading(false);
+    // Auth state change in useAuth will redirect automatically
   };
 
   return (

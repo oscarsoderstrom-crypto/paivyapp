@@ -18,15 +18,19 @@ export interface Profile {
   team_id:      string | null;
   accrual_rate: number;
   workweek:     Workweek;
+  track_hours:  boolean;
+  daily_hours:  number;
   team?:        Team;
 }
 
 export interface WorkLog {
-  id:      string;
-  user_id: string;
-  date:    string;
-  type:    DayTypeId;
-  notes?:  string;
+  id:          string;
+  user_id:     string;
+  date:        string;
+  type:        DayTypeId;
+  notes?:      string;
+  start_time?: string | null;
+  end_time?:   string | null;
 }
 
 export interface VacationRequest {

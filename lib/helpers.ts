@@ -135,3 +135,26 @@ export const statusColor = (s: string) =>
 
 export const statusBg = (s: string) =>
   s === 'approved' ? '#E8F5E9' : s === 'pending' ? '#FFF3E0' : '#FFEBEE';
+
+// ── Working-time helpers (used when HR enables time tracking) ──
+
+// "8:30" / "08:30" → "08:30"; returns null if not a valid 24h time
+export const parseHHMM = (s: string): string | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+
+// Postgres `time` comes back as "HH:MM:SS"; show "HH:MM"
+export const formatHHMM = (t?: string | null): string => (t ? t.slice(0, 5) : '');
+
+// Worked hours between two times; null if missing or non-positive
+export const hoursBetween = (start?: string | null, end?: string | null): number | null => {
+  if (!start || !end) return null;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const mins = (eh * 60 + em) - (sh * 60 + sm);
+  return mins > 0 ? mins / 60 : null;
+};

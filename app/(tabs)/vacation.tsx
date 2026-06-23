@@ -40,7 +40,7 @@ export default function VacationScreen() {
       .from('vacation_requests')
       .select('*, profile:profiles!vacation_requests_user_id_fkey(full_name, team_id, team:teams(name,color))')
       .order('start_date');
-    if (error) console.log('VACATION FETCH ERROR:', JSON.stringify(error, null, 2));
+    if (error) { Alert.alert('Could not load vacations', error.message); return; }
     if (data) setVacations(data as VacationRequest[]);
   };
 
@@ -78,8 +78,11 @@ export default function VacationScreen() {
   };
 
   const approveReject = async (id: string, status: 'approved'|'rejected') => {
-    await supabase.from('vacation_requests')
-      .update({ status, reviewed_by: profile!.id }).eq('id', id);
+    const { error } = await supabase.rpc('approve_vacation', {
+      p_request_id: id,
+      p_decision:   status,
+    });
+    if (error) Alert.alert('Error', error.message);
     fetchVacations();
   };
 
