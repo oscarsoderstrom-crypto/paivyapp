@@ -18,6 +18,8 @@ export interface Profile {
   team_id:      string | null;
   accrual_rate: number;
   workweek:     Workweek;
+  track_hours:  boolean;
+  daily_hours:  number;
   team?:        Team;
 }
 
@@ -47,8 +49,4 @@ export interface VacationBalance {
   total:     number;
   used:      number;
   remaining: number;
-}
-
-export interface AppSettings {
-  time_tracking_enabled: boolean;
 }

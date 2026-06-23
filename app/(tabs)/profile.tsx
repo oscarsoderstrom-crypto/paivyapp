@@ -4,9 +4,8 @@ import {
   StyleSheet, useColorScheme, Switch, Alert,
   Modal, TextInput, Share,
 } from 'react-native';
-import { useAuth }     from '../../hooks/useAuth';
-import { useSettings } from '../../hooks/useSettings';
-import { Colors }      from '../../constants/colors';
+import { useAuth }  from '../../hooks/useAuth';
+import { Colors }   from '../../constants/colors';
 import { getVacationBalance } from '../../lib/helpers';
 import { supabase } from '../../lib/supabase';
 import type { VacationRequest, Team } from '../../lib/types';
@@ -14,8 +13,7 @@ import type { VacationRequest, Team } from '../../lib/types';
 export default function ProfileScreen() {
   const scheme               = useColorScheme();
   const C                    = Colors[scheme as 'light' | 'dark' ?? 'light'];
-  const { profile, signOut }          = useAuth();
-  const { timeTracking, setTimeTracking } = useSettings();
+  const { profile, signOut } = useAuth();
 
   const [vacations,    setVacations]    = useState<VacationRequest[]>([]);
   const [teams,        setTeams]        = useState<Team[]>([]);
@@ -98,11 +96,6 @@ export default function ProfileScreen() {
   const initials  = profile.full_name
     .split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
 
-  const toggleTimeTracking = async (val: boolean) => {
-    const { error } = await setTimeTracking(val);
-    if (error) Alert.alert('Could not change setting', error.message);
-  };
-
   const handleSignOut = () => {
     Alert.alert('Sign out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -160,29 +153,6 @@ export default function ProfileScreen() {
             {profile.accrual_rate} days/month · Resets April 1 · Finnish Annual Holidays Act
           </Text>
         </View>
-
-        {/* HR Admin — Working-time tracking toggle */}
-        {profile.role === 'hr-admin' && (
-          <View style={[styles.card, { backgroundColor: C.card, borderColor: C.border }]}>
-            <Text style={[styles.sectionLabel, { color: C.muted }]}>WORKING TIME</Text>
-            <View style={styles.ttRow}>
-              <View style={{ flex: 1, paddingRight: 14 }}>
-                <Text style={[styles.ttTitle, { color: C.text }]}>Track working hours</Text>
-                <Text style={[styles.ttHint, { color: C.muted }]}>
-                  When on, employees add start and end times to their office and
-                  home days, so working time and overtime can be followed. When
-                  off, they simply mark where they work.
-                </Text>
-              </View>
-              <Switch
-                value={timeTracking}
-                onValueChange={toggleTimeTracking}
-                trackColor={{ true: C.accent, false: '#9CA3AF' }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-          </View>
-        )}
 
         {/* HR Admin — Invite users */}
         {profile.role === 'hr-admin' && (
@@ -355,9 +325,6 @@ const styles = StyleSheet.create({
   barFill:       { height: 6, backgroundColor: '#E05C2A', borderRadius: 3 },
   balNote:       { fontSize: 11, color: 'rgba(255,255,255,0.35)' },
   sectionLabel:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 12 },
-  ttRow:         { flexDirection: 'row', alignItems: 'center' },
-  ttTitle:       { fontSize: 15, fontWeight: '700' },
-  ttHint:        { fontSize: 12, marginTop: 4, lineHeight: 17 },
   subLabel:      { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 },
   inviteBtn:     { borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   inviteBtnText: { color: 'white', fontSize: 14, fontWeight: '700' },
