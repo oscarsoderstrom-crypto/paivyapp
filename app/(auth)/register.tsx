@@ -7,6 +7,15 @@ import {
 import { router }   from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
+// Alert.alert is a no-op on React Native Web, so fall back to window.alert there.
+const showAlert = (title: string, message?: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(message ? `${title}\n\n${message}` : title);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
 export default function RegisterScreen() {
   const [email,    setEmail]    = useState('');
   const [code,     setCode]     = useState('');
@@ -16,13 +25,13 @@ export default function RegisterScreen() {
 
   const register = async () => {
     if (!email || !code || !name || !password) {
-      Alert.alert('Please fill in all fields'); return;
+      showAlert('Please fill in all fields'); return;
     }
     if (code.trim().length < 8) {
-      Alert.alert('Invalid code', 'The invite code is 8 characters.'); return;
+      showAlert('Invalid code', 'The invite code is 8 characters.'); return;
     }
     if (password.length < 6) {
-      Alert.alert('Password must be at least 6 characters'); return;
+      showAlert('Password must be at least 6 characters'); return;
     }
     setLoading(true);
 
@@ -42,7 +51,7 @@ export default function RegisterScreen() {
     setLoading(false);
 
     if (signUpErr) {
-      Alert.alert('Sign up failed', signUpErr.message.includes('Database error')
+      showAlert('Sign up failed', signUpErr.message.includes('Database error')
         ? 'No valid invitation found for this email and code. Check with your HR admin.'
         : signUpErr.message);
       return;
@@ -67,8 +76,7 @@ export default function RegisterScreen() {
             style={styles.input}
             placeholder="e.g. a3f9b82c"
             placeholderTextColor="#4A6075"
-            value={code}
-            onChangeText={setCode}
+            value={code} onChangeText={setCode}
             autoCapitalize="none"
           />
           <Text style={styles.label}>YOUR EMAIL</Text>
@@ -76,26 +84,22 @@ export default function RegisterScreen() {
             style={styles.input}
             placeholder="you@company.fi"
             placeholderTextColor="#4A6075"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
+            value={email} onChangeText={setEmail}
+            autoCapitalize="none" keyboardType="email-address"
           />
           <Text style={styles.label}>FULL NAME</Text>
           <TextInput
             style={styles.input}
             placeholder="Matti Meikäläinen"
             placeholderTextColor="#4A6075"
-            value={name}
-            onChangeText={setName}
+            value={name} onChangeText={setName}
           />
           <Text style={styles.label}>PASSWORD</Text>
           <TextInput
             style={[styles.input, { marginBottom: 0 }]}
             placeholder="Min. 6 characters"
             placeholderTextColor="#4A6075"
-            value={password}
-            onChangeText={setPassword}
+            value={password} onChangeText={setPassword}
             secureTextEntry
           />
         </View>

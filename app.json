@@ -24,7 +24,7 @@
       },
       "package": "fi.paivyapp"
     },
-    "web": { "bundler": "metro", "output": "static", "favicon": "./assets/favicon.png" },
+    "web": { "bundler": "metro", "output": "single", "favicon": "./assets/favicon.png" },
     "plugins": ["expo-router", "expo-secure-store"],
     "experiments": { "typedRoutes": true }
   }
