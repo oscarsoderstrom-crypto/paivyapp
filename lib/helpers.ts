@@ -130,6 +130,66 @@ export const isWorkdayForUser = (
   if (workweek === 'mon-sun') return true;
   return !isWeekend(date);
 };
+// ── Work-hours helpers ───────────────────────────────────────────────────────
+// Workday length is stored as total *presence* in minutes (lunch included).
+// Paid/worked time = presence − lunch.
+export const paidMinutes = (workdayMin: number, lunchMin: number): number =>
+  Math.max(0, workdayMin - lunchMin);
+
+// 'set' mode: end of day is start + full presence length.
+export const autoEnd = (startISO: string, workdayMin: number): string =>
+  new Date(new Date(startISO).getTime() + workdayMin * 60_000).toISOString();
+
+// 'rolling' mode: worked = (end − start) − lunch, floored at 0.
+export const workedFromStamps = (
+  startISO: string,
+  endISO:   string,
+  lunchMin: number,
+): number => {
+  const presence = Math.round(
+    (new Date(endISO).getTime() - new Date(startISO).getTime()) / 60_000);
+  return Math.max(0, presence - lunchMin);
+};
+
+// 450 → "7h 30m", 480 → "8h", 45 → "45m"
+export const formatHm = (min: number): string => {
+  const m = Math.max(0, Math.round(min));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (h === 0) return `${r}m`;
+  if (r === 0) return `${h}h`;
+  return `${h}h ${r}m`;
+};
+
+// 450 → "7.5h", 480 → "8h" (compact label for pills/summaries)
+export const minutesToHoursLabel = (min: number): string => {
+  const h = min / 60;
+  return `${Number.isInteger(h) ? h : h.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}h`;
+};
+
+// Net overtime (minutes) across completed days, each compared to the day's standard
+// paid length. Positive = overtime worked, negative = hours short. Only completed
+// logs (have an end stamp + recorded worked minutes) count.
+export const overtimeMinutes = (
+  logs: { worked_minutes?: number | null; ended_at?: string | null }[],
+  standardPaidMin: number,
+): number =>
+  logs
+    .filter(l => l.ended_at != null && l.worked_minutes != null)
+    .reduce((sum, l) => sum + ((l.worked_minutes as number) - standardPaidMin), 0);
+
+// Signed h/m label for overtime balances: 130 → "+2h 10m", -45 → "−45m", 0 → "0m"
+export const formatSignedHm = (min: number): string => {
+  if (min === 0) return '0m';
+  return `${min > 0 ? '+' : '−'}${formatHm(Math.abs(min))}`;
+};
+
+// "08:35" local time from an ISO stamp
+export const formatClock = (iso: string): string => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+};
+
 export const statusColor = (s: string) =>
   s === 'approved' ? '#2E7D32' : s === 'pending' ? '#BF360C' : '#C62828';
 

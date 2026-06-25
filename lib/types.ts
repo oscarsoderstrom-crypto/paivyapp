@@ -3,6 +3,7 @@ export type VacationStatus = 'pending' | 'approved' | 'rejected';
 export type DayTypeId      = 'office' | 'home' | 'vac-paid' | 'vac-unpaid'
                            | 'sick' | 'trip-dom' | 'trip-int' | 'off';
 export type Workweek       = 'mon-fri' | 'mon-sun';
+export type HoursMode      = 'set' | 'rolling';
 
 export interface Team {
   id:    string;
@@ -18,6 +19,9 @@ export interface Profile {
   team_id:      string | null;
   accrual_rate: number;
   workweek:     Workweek;
+  hours_mode:      HoursMode;
+  workday_minutes: number;  // total presence incl. lunch
+  lunch_minutes:   number;  // unpaid lunch deducted from presence
   team?:        Team;
 }
 
@@ -27,6 +31,9 @@ export interface WorkLog {
   date:    string;
   type:    DayTypeId;
   notes?:  string;
+  started_at?:     string;  // stamp-in (ISO)
+  ended_at?:       string;  // stamp-out (ISO) — auto in 'set' mode, manual in 'rolling'
+  worked_minutes?: number;  // paid minutes = presence − lunch
 }
 
 export interface VacationRequest {

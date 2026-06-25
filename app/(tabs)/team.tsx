@@ -1,12 +1,110 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, useColorScheme, Modal,
+  StyleSheet, useColorScheme, Modal, TextInput,
 } from 'react-native';
 import { supabase }  from '../../lib/supabase';
 import { useAuth }   from '../../hooks/useAuth';
 import { Colors }    from '../../constants/colors';
-import type { Profile, Team, Workweek } from '../../lib/types';
+import type { Theme } from '../../constants/colors';
+import {
+  minutesToHoursLabel, paidMinutes,
+  overtimeMinutes, formatSignedHm,
+} from '../../lib/helpers';
+import type { Profile, Team, Workweek, HoursMode } from '../../lib/types';
+
+// Shared work-hours controls — reused for per-user rows and the bulk-per-team block.
+const WORKDAY_PRESETS = [450, 480];      // 7.5h, 8h (presence incl. lunch)
+const LUNCH_PRESETS   = [0, 30, 45, 60];
+
+function HoursControls({
+  C, mode, workdayMin, lunchMin, onMode, onWorkday, onLunch,
+}: {
+  C:          Theme;
+  mode:       HoursMode;
+  workdayMin: number;
+  lunchMin:   number;
+  onMode:     (m: HoursMode) => void;
+  onWorkday:  (min: number) => void;
+  onLunch:    (min: number) => void;
+}) {
+  const [custom, setCustom] = useState('');
+  const isPreset = WORKDAY_PRESETS.includes(workdayMin);
+
+  const commitCustom = () => {
+    const h = parseFloat(custom.replace(',', '.'));
+    if (h > 0 && h <= 24) onWorkday(Math.round(h * 60));
+    setCustom('');
+  };
+
+  return (
+    <>
+      <Text style={[styles.fieldLabel, { color: C.muted }]}>WORK HOURS MODE</Text>
+      <View style={styles.settingsBtns}>
+        {([
+          { id: 'set',     label: 'Set work time' },
+          { id: 'rolling', label: 'Rolling' },
+        ] as { id: HoursMode; label: string }[]).map(o => (
+          <TouchableOpacity key={o.id}
+            style={[styles.ratePill,
+              { borderColor: C.accent,
+                backgroundColor: mode === o.id ? C.accent : 'transparent' }]}
+            onPress={() => onMode(o.id)}>
+            <Text style={[styles.ratePillText,
+              { color: mode === o.id ? 'white' : C.accent }]}>{o.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={[styles.fieldLabel, { color: C.muted }]}>WORKDAY LENGTH (incl. lunch)</Text>
+      <View style={styles.settingsBtns}>
+        {WORKDAY_PRESETS.map(p => (
+          <TouchableOpacity key={p}
+            style={[styles.ratePill,
+              { borderColor: C.accent,
+                backgroundColor: workdayMin === p ? C.accent : 'transparent' }]}
+            onPress={() => onWorkday(p)}>
+            <Text style={[styles.ratePillText,
+              { color: workdayMin === p ? 'white' : C.accent }]}>
+              {minutesToHoursLabel(p)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        {!isPreset && (
+          <View style={[styles.ratePill, { borderColor: C.accent, backgroundColor: C.accent }]}>
+            <Text style={[styles.ratePillText, { color: 'white' }]}>
+              {minutesToHoursLabel(workdayMin)}
+            </Text>
+          </View>
+        )}
+        <TextInput
+          style={[styles.customInput, { borderColor: C.border, color: C.text }]}
+          placeholder="Custom h"
+          placeholderTextColor={C.muted}
+          keyboardType="decimal-pad"
+          value={custom}
+          onChangeText={setCustom}
+          onSubmitEditing={commitCustom}
+          onBlur={commitCustom}
+        />
+      </View>
+
+      <Text style={[styles.fieldLabel, { color: C.muted }]}>LUNCH BREAK</Text>
+      <View style={styles.settingsBtns}>
+        {LUNCH_PRESETS.map(l => (
+          <TouchableOpacity key={l}
+            style={[styles.ratePill,
+              { borderColor: C.accent,
+                backgroundColor: lunchMin === l ? C.accent : 'transparent' }]}
+            onPress={() => onLunch(l)}>
+            <Text style={[styles.ratePillText,
+              { color: lunchMin === l ? 'white' : C.accent }]}>{l}m</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </>
+  );
+}
 
 export default function TeamScreen() {
   const scheme      = useColorScheme();
@@ -15,10 +113,18 @@ export default function TeamScreen() {
 
   const [members,   setMembers]   = useState<Profile[]>([]);
   const [teams,     setTeams]     = useState<Team[]>([]);
+  const [otLogs,    setOtLogs]    = useState<{ user_id: string; worked_minutes: number | null; ended_at: string | null }[]>([]);
   const [showAll,   setShowAll]   = useState(false);
   const [settings,  setSettings]  = useState(false);
 
+  // Bulk-per-team work-hours selection (HR only)
+  const [bulkTeam,    setBulkTeam]    = useState<string | null>(null);
+  const [bulkMode,    setBulkMode]    = useState<HoursMode>('set');
+  const [bulkWorkday, setBulkWorkday] = useState(480);
+  const [bulkLunch,   setBulkLunch]   = useState(30);
+
   const isMgr = profile?.role === 'manager' || profile?.role === 'hr-admin';
+  const isHr  = profile?.role === 'hr-admin';
 
   useEffect(() => { fetchData(); }, []);
 
@@ -29,7 +135,32 @@ export default function TeamScreen() {
       .select('*, team:teams(*)');
     if (t) setTeams(t as Team[]);
     if (m) setMembers(m as Profile[]);
+
+    // Overtime source data — RLS limits this to the rows the viewer may see
+    // (hr-admin: everyone; manager: their team; employee: only self).
+    const { data: l } = await supabase
+      .from('work_logs')
+      .select('user_id, worked_minutes, ended_at')
+      .not('ended_at', 'is', null);
+    if (l) setOtLogs(l as any[]);
   };
+
+  // Net overtime per user (rolling-mode members only), vs each member's standard day.
+  const otByUser = useMemo(() => {
+    const map: Record<string, number> = {};
+    members.forEach(m => {
+      if (m.hours_mode !== 'rolling') return;
+      const mine     = otLogs.filter(l => l.user_id === m.id);
+      const standard = paidMinutes(m.workday_minutes, m.lunch_minutes);
+      map[m.id] = overtimeMinutes(mine, standard);
+    });
+    return map;
+  }, [members, otLogs]);
+
+  const teamOvertime = (teamId: string) =>
+    members
+      .filter(m => m.team_id === teamId && m.hours_mode === 'rolling')
+      .reduce((sum, m) => sum + (otByUser[m.id] ?? 0), 0);
 
   const updateTeam = async (userId: string, teamId: string) => {
     await supabase.from('profiles').update({ team_id: teamId }).eq('id', userId);
@@ -43,6 +174,19 @@ export default function TeamScreen() {
 
   const updateWorkweek = async (userId: string, workweek: Workweek) => {
     await supabase.from('profiles').update({ workweek }).eq('id', userId);
+    fetchData();
+  };
+
+  const updateHours = async (userId: string, patch: Partial<Profile>) => {
+    await supabase.from('profiles').update(patch).eq('id', userId);
+    fetchData();
+  };
+
+  const bulkApplyHours = async () => {
+    if (!bulkTeam) return;
+    await supabase.from('profiles')
+      .update({ hours_mode: bulkMode, workday_minutes: bulkWorkday, lunch_minutes: bulkLunch })
+      .eq('team_id', bulkTeam);
     fetchData();
   };
 
@@ -94,6 +238,15 @@ export default function TeamScreen() {
                 <Text style={[styles.teamCount, { color: C.muted }]}>
                   ({teamMembers.length})
                 </Text>
+                {isMgr && teamMembers.some(m => m.hours_mode === 'rolling') && (() => {
+                  const ot = teamOvertime(team.id);
+                  return (
+                    <Text style={[styles.teamOt,
+                      { color: ot >= 0 ? '#2E7D32' : '#C62828' }]}>
+                      ⏱ {formatSignedHm(ot)} OT
+                    </Text>
+                  );
+                })()}
               </View>
               <View style={[styles.card, { backgroundColor: C.card, borderColor: C.border }]}>
                 {teamMembers.map((m, i) => {
@@ -112,8 +265,19 @@ export default function TeamScreen() {
                         <Text style={[styles.memberRole, { color: C.muted }]}>
                           {roleLabel}
                           {isMgr ? ` · ${m.accrual_rate}d/mo · ${m.workweek === 'mon-sun' ? 'Mon–Sun' : 'Mon–Fri'}` : ''}
+                          {isMgr ? ` · ${m.hours_mode === 'rolling' ? 'Rolling' : 'Set'} ${minutesToHoursLabel(m.workday_minutes)}` : ''}
                         </Text>
                       </View>
+                      {isMgr && m.hours_mode === 'rolling' && (
+                        <View style={[styles.otBadge,
+                          { backgroundColor: (otByUser[m.id] ?? 0) >= 0 ? '#E8F5E9' : '#FFEBEE' }]}>
+                          <Text style={[styles.otBadgeText,
+                            { color: (otByUser[m.id] ?? 0) >= 0 ? '#2E7D32' : '#C62828' }]}>
+                            {formatSignedHm(otByUser[m.id] ?? 0)}
+                          </Text>
+                          <Text style={styles.otBadgeLabel}>OT</Text>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -134,9 +298,54 @@ export default function TeamScreen() {
               </TouchableOpacity>
             </View>
             <Text style={[styles.modalSub, { color: C.muted }]}>
-              Set team, vacation accrual, and workweek pattern per user.
+              Set team, vacation accrual, workweek, and work hours per user.
             </Text>
             <ScrollView>
+
+              {/* Bulk apply work hours to an entire team (HR only) */}
+              {isHr && (
+                <View style={[styles.bulkBox, { backgroundColor: C.bg, borderColor: C.accent }]}>
+                  <Text style={[styles.bulkTitle, { color: C.text }]}>
+                    ⚡ Bulk-set work hours for a team
+                  </Text>
+                  <Text style={[styles.fieldLabel, { color: C.muted }]}>TEAM</Text>
+                  <View style={styles.settingsBtns}>
+                    {teams.map(t => (
+                      <TouchableOpacity key={t.id}
+                        style={[styles.teamPill,
+                          { borderColor: t.color,
+                            backgroundColor: bulkTeam === t.id ? t.color : 'transparent' }]}
+                        onPress={() => setBulkTeam(t.id)}>
+                        <Text style={[styles.teamPillText,
+                          { color: bulkTeam === t.id ? 'white' : t.color }]}>{t.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <HoursControls
+                    C={C}
+                    mode={bulkMode}
+                    workdayMin={bulkWorkday}
+                    lunchMin={bulkLunch}
+                    onMode={setBulkMode}
+                    onWorkday={setBulkWorkday}
+                    onLunch={setBulkLunch}
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.bulkApplyBtn,
+                      { backgroundColor: bulkTeam ? C.accent : C.border }]}
+                    disabled={!bulkTeam}
+                    onPress={bulkApplyHours}>
+                    <Text style={styles.bulkApplyText}>
+                      {bulkTeam
+                        ? `Apply to all in ${teams.find(t => t.id === bulkTeam)?.name}`
+                        : 'Pick a team first'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {members.map(m => (
                 <View key={m.id}
                   style={[styles.settingsRow, { backgroundColor: C.bg, borderColor: C.border }]}>
@@ -197,6 +406,18 @@ export default function TeamScreen() {
                         </TouchableOpacity>
                       ))}
                     </View>
+
+                    {isHr && (
+                      <HoursControls
+                        C={C}
+                        mode={m.hours_mode}
+                        workdayMin={m.workday_minutes}
+                        lunchMin={m.lunch_minutes}
+                        onMode={v => updateHours(m.id, { hours_mode: v })}
+                        onWorkday={v => updateHours(m.id, { workday_minutes: v })}
+                        onLunch={v => updateHours(m.id, { lunch_minutes: v })}
+                      />
+                    )}
                   </View>
                 </View>
               ))}
@@ -228,6 +449,11 @@ const styles = StyleSheet.create({
   teamDot:       { width: 10, height: 10, borderRadius: 5 },
   teamName:      { fontSize: 15, fontWeight: '700' },
   teamCount:     { fontSize: 12 },
+  teamOt:        { fontSize: 12, fontWeight: '700', marginLeft: 'auto' },
+  otBadge:       { alignItems: 'center', borderRadius: 8,
+                   paddingHorizontal: 8, paddingVertical: 3, minWidth: 52 },
+  otBadgeText:   { fontSize: 12, fontWeight: '800' },
+  otBadgeLabel:  { fontSize: 8, fontWeight: '700', color: '#90A4AE', letterSpacing: 0.5 },
   card:          { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
   memberRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   avatar:        { width: 36, height: 36, borderRadius: 18,
@@ -251,6 +477,14 @@ const styles = StyleSheet.create({
   ratePill:      { paddingHorizontal: 10, paddingVertical: 3,
                    borderRadius: 20, borderWidth: 1 },
   ratePillText:  { fontSize: 11, fontWeight: '600' },
+  customInput:   { minWidth: 64, paddingHorizontal: 10, paddingVertical: 3,
+                   borderRadius: 20, borderWidth: 1, fontSize: 11 },
+  bulkBox:       { borderRadius: 12, padding: 12, borderWidth: 1,
+                   borderStyle: 'dashed', marginBottom: 12 },
+  bulkTitle:     { fontSize: 13, fontWeight: '800', marginBottom: 4 },
+  bulkApplyBtn:  { borderRadius: 10, paddingVertical: 11,
+                   alignItems: 'center', marginTop: 12 },
+  bulkApplyText: { color: 'white', fontSize: 13, fontWeight: '700' },
   saveBtn:       { borderRadius: 12, paddingVertical: 13,
                    alignItems: 'center', marginTop: 10 },
   saveBtnText:   { color: 'white', fontSize: 15, fontWeight: '700' },
