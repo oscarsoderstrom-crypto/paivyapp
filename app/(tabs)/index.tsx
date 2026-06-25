@@ -13,6 +13,8 @@ import {
   isWeekend, isHoliday,
   getDateRange, formatDisplay,
   isWorkdayForUser,
+  autoEnd, paidMinutes, workedFromStamps,
+  formatHm, formatClock,
 } from '../../lib/helpers';
 import type { WorkLog, DayTypeId } from '../../lib/types';
 
@@ -32,10 +34,20 @@ export default function WorkLogScreen() {
   const [rangeEnd,   setRangeEnd]   = useState<string | null>(null);
   const [picker,     setPicker]     = useState(false);
   const [pendingDays,setPendingDays]= useState<string[]>([]);
+  const [nowTick,    setNowTick]    = useState(Date.now());
 
   const todayStr = today();
+  const todayLog = logs.find(l => l.date === todayStr);
+  const clockedIn = !!todayLog?.started_at && !todayLog?.ended_at;
 
   useEffect(() => { if (profile) fetchLogs(); }, [profile, year, month]);
+
+  // Live elapsed timer while a rolling day is open
+  useEffect(() => {
+    if (profile?.hours_mode !== 'rolling' || !clockedIn) return;
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [profile?.hours_mode, clockedIn]);
 
   const fetchLogs = async () => {
     // Fetch a wider range so trailing days from prev/next months show their logs too
@@ -84,8 +96,30 @@ export default function WorkLogScreen() {
   };
 
   const markToday = async (type: DayTypeId) => {
+    const now      = new Date().toISOString();
+    const startISO = todayLog?.started_at ?? now;   // preserve an existing stamp-in
+    const row: Record<string, unknown> = {
+      user_id: profile!.id, date: todayStr, type, started_at: startISO,
+    };
+    if (profile!.hours_mode === 'set') {
+      row.ended_at       = autoEnd(startISO, profile!.workday_minutes);
+      row.worked_minutes = paidMinutes(profile!.workday_minutes, profile!.lunch_minutes);
+    } else {
+      // rolling: keep any prior end/worked (e.g. correcting the type after ending)
+      row.ended_at       = todayLog?.ended_at ?? null;
+      row.worked_minutes = todayLog?.worked_minutes ?? null;
+    }
+    await supabase.from('work_logs').upsert(row, { onConflict: 'user_id,date' });
+    fetchLogs();
+  };
+
+  const endWorkDay = async () => {
+    if (!todayLog?.started_at) return;
+    const now    = new Date().toISOString();
+    const worked = workedFromStamps(todayLog.started_at, now, profile!.lunch_minutes);
     await supabase.from('work_logs').upsert(
-      { user_id: profile!.id, date: todayStr, type },
+      { user_id: profile!.id, date: todayStr, type: todayLog.type,
+        started_at: todayLog.started_at, ended_at: now, worked_minutes: worked },
       { onConflict: 'user_id,date' });
     fetchLogs();
   };
@@ -135,6 +169,62 @@ export default function WorkLogScreen() {
               );
             })}
           </View>
+
+          {/* Work-hours status (only once stamped in for an office/home day) */}
+          {todayLog?.started_at &&
+           (todayLog.type === 'office' || todayLog.type === 'home') && (() => {
+            const standard = paidMinutes(profile!.workday_minutes, profile!.lunch_minutes);
+            const isRolling = profile!.hours_mode === 'rolling';
+            return (
+              <View style={[styles.hoursBox, { borderColor: C.border }]}>
+                {!isRolling ? (
+                  // 'Set work time' — end auto-filled
+                  <Text style={[styles.hoursText, { color: C.text }]}>
+                    🕗 In {formatClock(todayLog.started_at)}
+                    {todayLog.ended_at ? ` · Ends ${formatClock(todayLog.ended_at)}` : ''}
+                    {'  ·  '}
+                    <Text style={{ fontWeight: '800' }}>{formatHm(standard)}</Text>
+                  </Text>
+                ) : clockedIn ? (
+                  // rolling, still open — live elapsed
+                  <View>
+                    <Text style={[styles.hoursText, { color: C.text }]}>
+                      🕗 In since {formatClock(todayLog.started_at)}
+                      {'  ·  '}
+                      <Text style={{ fontWeight: '800' }}>
+                        {formatHm(workedFromStamps(
+                          todayLog.started_at, new Date(nowTick).toISOString(),
+                          profile!.lunch_minutes))} so far
+                      </Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.endBtn, { backgroundColor: C.accent }]}
+                      onPress={endWorkDay}>
+                      <Text style={styles.endBtnText}>⏹  End work day</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  // rolling, ended — worked vs standard
+                  (() => {
+                    const worked = todayLog.worked_minutes ?? 0;
+                    const diff   = worked - standard;
+                    const diffC  = diff >= 0 ? '#2E7D32' : '#C62828';
+                    return (
+                      <Text style={[styles.hoursText, { color: C.text }]}>
+                        🕗 {formatClock(todayLog.started_at)}–{formatClock(todayLog.ended_at!)}
+                        {'  ·  '}
+                        <Text style={{ fontWeight: '800' }}>{formatHm(worked)}</Text>
+                        {` / ${formatHm(standard)}  `}
+                        <Text style={{ color: diffC, fontWeight: '700' }}>
+                          {diff >= 0 ? '+' : '−'}{formatHm(Math.abs(diff))}
+                        </Text>
+                      </Text>
+                    );
+                  })()
+                )}
+              </View>
+            );
+          })()}
         </View>
 
         {/* Select range toggle */}
@@ -279,6 +369,10 @@ const styles = StyleSheet.create({
   row:          { flexDirection: 'row', gap: 8 },
   quickBtn:     { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   quickBtnText: { fontSize: 13, fontWeight: '700' },
+  hoursBox:     { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  hoursText:    { fontSize: 13, lineHeight: 19 },
+  endBtn:       { marginTop: 10, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  endBtnText:   { color: 'white', fontSize: 13, fontWeight: '700' },
   selectToggle: { borderRadius: 12, borderWidth: 1, paddingVertical: 12,
                   alignItems: 'center', marginBottom: 14 },
   selectToggleText: { fontSize: 14, fontWeight: '700' },

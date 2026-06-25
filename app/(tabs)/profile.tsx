@@ -6,7 +6,10 @@ import {
 } from 'react-native';
 import { useAuth }  from '../../hooks/useAuth';
 import { Colors }   from '../../constants/colors';
-import { getVacationBalance } from '../../lib/helpers';
+import {
+  getVacationBalance, paidMinutes,
+  overtimeMinutes, formatSignedHm,
+} from '../../lib/helpers';
 import { supabase } from '../../lib/supabase';
 import type { VacationRequest, Team } from '../../lib/types';
 
@@ -25,13 +28,28 @@ export default function ProfileScreen() {
   const [inviteTeam,   setInviteTeam]   = useState('');
   const [inviteRole,   setInviteRole]   = useState<'employee'|'manager'>('employee');
   const [saving,       setSaving]       = useState(false);
+  const [otMinutes,    setOtMinutes]    = useState(0);
+  const [otDays,       setOtDays]       = useState(0);
 
   useEffect(() => {
     if (!profile) return;
     fetchVacations();
     fetchTeams();
+    fetchOvertime();
     if (profile.role === 'hr-admin') fetchInvitations();
   }, [profile]);
+
+  const fetchOvertime = async () => {
+    const { data } = await supabase
+      .from('work_logs')
+      .select('worked_minutes, ended_at')
+      .eq('user_id', profile!.id)
+      .not('ended_at', 'is', null);
+    if (!data) return;
+    const standard = paidMinutes(profile!.workday_minutes, profile!.lunch_minutes);
+    setOtMinutes(overtimeMinutes(data as any[], standard));
+    setOtDays((data as any[]).filter(l => l.worked_minutes != null).length);
+  };
 
   const fetchVacations = async () => {
     const { data } = await supabase.from('vacation_requests').select('*');
@@ -157,6 +175,29 @@ export default function ProfileScreen() {
             {profile.accrual_rate} days/month · Resets April 1 · Finnish Annual Holidays Act
           </Text>
         </View>
+
+        {/* Overtime — only for users who stamp start/end (rolling) */}
+        {profile.hours_mode === 'rolling' && (
+          <View style={[styles.card, { backgroundColor: C.card, borderColor: C.border }]}>
+            <Text style={[styles.sectionLabel, { color: C.muted }]}>
+              OVERTIME WORKED
+            </Text>
+            <Text style={[styles.otValue,
+              { color: otMinutes >= 0 ? C.green : C.red }]}>
+              {formatSignedHm(otMinutes)}
+            </Text>
+            <Text style={[styles.otNote, { color: C.muted }]}>
+              {otMinutes >= 0
+                ? `Banked across ${otDays} tracked day${otDays === 1 ? '' : 's'}`
+                : `Hours short across ${otDays} tracked day${otDays === 1 ? '' : 's'}`}
+              {' · vs '}
+              {(() => {
+                const std = paidMinutes(profile.workday_minutes, profile.lunch_minutes);
+                return `${std % 60 === 0 ? std/60 : (std/60).toFixed(2)}h/day`;
+              })()}
+            </Text>
+          </View>
+        )}
 
         {/* HR Admin — Invite users */}
         {profile.role === 'hr-admin' && (
@@ -329,6 +370,8 @@ const styles = StyleSheet.create({
   barFill:       { height: 6, backgroundColor: '#E05C2A', borderRadius: 3 },
   balNote:       { fontSize: 11, color: 'rgba(255,255,255,0.35)' },
   sectionLabel:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 12 },
+  otValue:       { fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
+  otNote:        { fontSize: 11, marginTop: 4 },
   subLabel:      { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 },
   inviteBtn:     { borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   inviteBtnText: { color: 'white', fontSize: 14, fontWeight: '700' },
